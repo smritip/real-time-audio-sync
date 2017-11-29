@@ -1,67 +1,86 @@
 class OTW():
     
-    def __init__(self, ref_recording, params):
+    def __init__(self, ref_recording, params, debug=False):
         # reference audio, fs = 22050
         self.ref, self.fs = librosa.load(ref_recording)
         
-        # TODO: add debug to params
+        # params
         self.fft_len = params['fft_len']
         self.hop_size = params['hop_size']
         self.search_band_width = params['search_band_width']
         self.max_run_count = params['max_run_count']  # max slope
         
-        # create STFT and chromagram of reference audio
-        # TODO: check which stft and chroma to do (additions: tuning, cens, etc)
-        # TODO: which librosa functions to use; chroma here seems weird
-        # TODO: do I need to calculate STFT at all ?
-        # stft_ref = librosa.stft(ref, fft_len, hop_size)
-        self.chroma_ref = librosa.feature.chroma_stft(y=self.ref, sr=self.fs, n_fft=self.fft_len, hop_length=self.hop_size)
-        #plt.imshow(self.chroma_ref, origin="lower", aspect='auto', cmap='Greys');
-        #plt.colorbar();
+        self.debug = debug
+        
+        # create STFT, spectrogram, and chromagram of reference audio
+        # TODO: check additions (tuning, normalization, etc.)
+        # note: using own stft function (vs. librosa's) b/c insert will also use self.stft
+        stft_ref = self.stft(self.ref, self.fft_len, self.hop_size)
+        spec_ref = np.abs(stft_ref)**2
+        self.chromafb = librosa.filters.chroma(self.fs, self.fft_len)
+        raw_chroma_ref = np.dot(self.chromafb, spec_ref)
+        self.chroma_ref = librosa.util.normalize(raw_chroma_ref, norm=2, axis=0)
+        
+        if self.debug:
+            plt.figure(figsize=(10, 4))
+            librosa.display.specshow(self.chroma_ref, y_axis='chroma', x_axis='time')
+            plt.colorbar()
+            plt.title('Reference Chromagram')
+            plt.tight_layout()
         
         # initialize arrays and matrices for live audio
-        # double length of ref STFT and chroma to make sure there is enough space w/out dynamically changing
-        # TODO: do I need to calculate STFT at all ?
-        # stft_live = np.empty((stft_ref.shape[0], stft_ref.shape[1]*2))
-        # TODO : do I need chroma for live at all?
-        # self.chroma_live = np.zeros((chroma_ref.shape[0], chroma_ref.shape[1]*2))
-        
+        # double length of ref chroma for live chroma to make sure there is enough space w/out dynamically changing
         self.N = self.chroma_ref.shape[1] * 2  # rows are live
         self.M = self.chroma_ref.shape[1]      # cols are ref
         self.C = np.zeros((self.N, self.M))
         self.D = np.empty((self.N, self.M))
         self.D.fill(float('inf'))
         
+        self.chroma_live = np.zeros((12, self.N))
+        
         # TODO: use pyaudio buffer
         self.buf = []
         self.path = []
         
-        # useful pointers
+        # pointers & variables for OTW algorithm
         self.cost_matrix_ptr = 0
         self.ref_ptr = 0
         self.live_ptr = 0
         self.previous = None
         self.run_count = 0
         
+        if self.debug:
+            self.chroma_ptr = 0
+        
     def insert(self, live_audio_buf):
         # store incoming music
         self.buf += live_audio_buf
         
-        # TODO: deal with out of bounds issue...
+        # dealing with out of bounds issue
         if self.ref_ptr >= self.M - 1 or self.live_ptr >= self.N - 1:
             return "stop"
         
         # OTW algorithm:
         # identify window for one chroma col
         while len(self.buf) >= self.fft_len:
-            win = np.array(self.buf[:self.fft_len])
+            section = np.array(self.buf[:self.fft_len])
             self.buf = self.buf[self.hop_size:]
+            win = section * np.hanning(len(section))
             chroma = librosa.feature.chroma_stft(y=win, sr=self.fs, n_fft=self.fft_len, hop_length=self.hop_size)
+            
+            dft = np.fft.rfft(win)
+            spec = np.abs(dft)**2
+            raw_chroma = np.dot(self.chromafb, spec)
+            chroma = librosa.util.normalize(raw_chroma, norm=2, axis=0)
+            
+            if self.debug:
+                self.chroma_live[:, self.chroma_ptr] = chroma
+                self.chroma_ptr += 1
 
             # update cost matrix
-            # TODO: why is this more than one column?? (fix: sent first element...)
-            self.update_cost_matrix(chroma[:, 0])
+            self.update_cost_matrix(chroma)
             
+            # update distance (ie total path cost) matrix
             while (self.ref_ptr < self.cost_matrix_ptr - 1) and (self.live_ptr < self.N - 1):
                 inc = self.get_inc()
                 
@@ -88,6 +107,17 @@ class OTW():
                 # update path
                 self.path.append((self.ref_ptr, self.live_ptr))
             
+
+    def debug_on(self):
+        self.debug = True
+        
+    def debug_off(self):
+        self.debug = False
+    
+    ########################
+    ##  Helper functions  ##
+    ########################
+    
     def update_cost_matrix(self, chroma):
         ''' 
         Assumes chroma is just one column.
@@ -146,13 +176,41 @@ class OTW():
             self.D[i, j] = cost + self.C[i, j]
         
         # else, self.D[i, j] will remain 'inf'
+        
+    def stft(self, x, fft_len, hop_size):
+        L = fft_len
+        H = hop_size
+
+        # use centered window by zero-padding
+        x = np.concatenate((np.zeros(L/2), x))
+
+        N = len(x)
+
+        num_bins = 1 + L/2
+        num_hops = int(((N - L)/H) + 1)
+
+        stft = np.empty((num_bins, num_hops), dtype=complex)
+
+        M = num_hops
+        if self.debug:
+            print "Calculating dft for", M, "hops."
+        
+        for m in range(M):
+            section = x[(m*H):((m*H) + L)]
+            win = section * np.hanning(len(section))
+            stft[:, m]= np.fft.rfft(win)
+
+        return stft
+    
 
 class test_single_recording():
     
-    def __init__(self, ref_recording, live_recording, ref_ground_truth, live_ground_truth, params):
+    def __init__(self, ref_recording, live_recording, ref_ground_truth, live_ground_truth, params, debug=False):
         # TODO: pass in 'dtw', which is some form of DTW_x...
-        self.dtw = OTW(ref_recording, params)  
+        
+        self.dtw = OTW(ref_recording, params, debug)  
         self.live_recording, fs = librosa.load(live_recording)
+        self.debug = debug
         
         self.ref_ground_truth_time = []
         self.ref_ground_truth_beats = []
@@ -160,8 +218,12 @@ class test_single_recording():
         self.live_ground_truth_beats = []
         
         ref_song = ref_recording[:-4]
+        if self.debug:
+            print "Reference song:", ref_song
         ref_csv_file = ref_song + '.csv'
         live_song = live_recording[:-4]
+        if self.debug:
+            print "Live song:", live_song
         live_csv_file = live_song + '.csv'
      
         with open(ref_csv_file) as ref_csv_data:
@@ -180,32 +242,42 @@ class test_single_recording():
         '''Evaluate single piece of music with one DTW variant.'''
         # Emulate live recording via creation of buffers
         buffers = np.array_split(self.live_recording, buf_size)
-        ctr = 0
         # For each buffer, get the synchronization estimate (ie the estimated position)
         # via call to insert
         for buf in buffers:
-            if ctr%100 == 0:
-                print ctr
             est = self.dtw.insert(buf.tolist())
             if est == "stop":
                 break
-            ctr += 1
         
         self.sync_ests = self.dtw.path
+        
+        if self.debug:
+            # show live chroma
+            plt.figure(figsize=(10, 4))
+            librosa.display.specshow(self.dtw.chroma_live, y_axis='chroma', x_axis='time')
+            plt.colorbar()
+            plt.title('Live Chromagram')
+            plt.tight_layout()
+            # show distance matrix
+            plt.figure()
+            plt.imshow(self.dtw.D)
+            plt.colorbar()
+            plt.title('Distance Matrix')
+            plt.tight_layout()
         
         # Compare estimates to ground truth, and return error
         error = self.get_error()
         return error
     
     def get_error(self):
-        # TODO: determine better way to generate score
         error = 0
         for (l, r) in self.sync_ests:
             l_beat = self.get_beat(l, self.live_ground_truth_time, self.live_ground_truth_beats)
             r_beat = self.get_beat(r, self.ref_ground_truth_time, self.ref_ground_truth_beats)
-            #diff = (r_beat - l_beat)**2
-            diff = r_beat - l_beat
+            diff = (r_beat - l_beat)**2
             error += diff
+        if self.debug:
+            print "Error:", error
         return error
         
     def get_beat(self, t, gtime, gbeats):
