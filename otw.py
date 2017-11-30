@@ -161,17 +161,13 @@ class OTW():
     def update_distance_matrix(self, i, j):
         costs = []
         if i > 0:
-        #if i > 0 and (i-1) < self.N and j < self.M:
             costs.append(self.D[i-1, j])
         if j > 0:
-        #if j > 0 and (j-1) < self.M and i < self.N:
             costs.append(self.D[i, j-i])
         if i > 0 and j > 0:
-        #if i > 0 and j > 0 and (i-1) < self.N and (j-1) < self.M:
             costs.append(self.D[i-1, j-1])
         
         if costs != []:
-        #if costs != [] and i < self.N and j < self.M: 
             cost = min(costs)
             self.D[i, j] = cost + self.C[i, j]
         
@@ -201,7 +197,7 @@ class OTW():
             stft[:, m]= np.fft.rfft(win)
 
         return stft
-    
+
 
 class test_single_recording():
     
@@ -289,4 +285,3 @@ class test_single_recording():
                 return gbeats[i]
         # TODO: find better alternative return value
         return 0
-        
