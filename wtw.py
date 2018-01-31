@@ -1,8 +1,9 @@
 class WTW():
     
-    def __init__(self, ref_recording, params, debug=False):
+    def __init__(self, ref_recording, params, debug_params):
         # reference audio, fs = 22050
         self.ref, self.fs = librosa.load(ref_recording)
+        assert(self.fs == 22050)
         
         # params
         self.fft_len = params['fft_len']
@@ -10,7 +11,7 @@ class WTW():
         self.dtw_win_size = params['dtw_win_size']
         self.dtw_hop_size = params['dtw_hop_size']
         
-        self.debug = debug
+        self.chroma_info = debug_params['chroma']
         
         # create STFT, spectrogram, and chromagram of reference audio
         # TODO: check additions (tuning, normalization, etc.)
@@ -21,7 +22,7 @@ class WTW():
         raw_chroma_ref = np.dot(self.chromafb, spec_ref)
         self.chroma_ref = librosa.util.normalize(raw_chroma_ref, norm=2, axis=0)
         
-        if self.debug:
+        if self.chroma_info:
             plt.figure(figsize=(10, 4))
             librosa.display.specshow(self.chroma_ref, y_axis='chroma', x_axis='time')
             plt.colorbar()
@@ -39,18 +40,13 @@ class WTW():
         self.buf = []
         self.path = []
         
-        # pointers & variables for OTW algorithm
-        #self.cost_matrix_ptr = 0
-        #self.ref_ptr = 0
-        #self.live_ptr = 0
-        #self.previous = None
-        #self.run_count = 0
-        
+        # pointers & variables for WTW algorithm        
         self.chroma_ptr = 0
         self.live_ptr = 0
         self.ref_ptr = 0
         self.windows = []
         
+    # TODO: make robust to floats (vs just int)    
     def insert(self, live_audio_buf):
         # store incoming music
         self.buf += live_audio_buf
@@ -75,36 +71,39 @@ class WTW():
             self.chroma_live[:, self.chroma_ptr] = chroma
             self.chroma_ptr += 1
 
-            # boundary conditions:
-            if self.ref_ptr >= (self.M - 1 - self.dtw_win_size) or self.live_ptr >= (self.N - 1 - self.dtw_win_size):
+            # TODO: boundary conditions:
+            if self.ref_ptr >= (self.M - 1 - (self.dtw_win_size/self.hop_size)) or self.live_ptr >= (self.N - 1 - (self.dtw_win_size/self.hop_size)):
                 return "stop"
-
+            
             # perform DTW on WTW window, if possible
-            while (self.chroma_ptr - self.live_ptr >= self.dtw_win_size):
-                chroma_x = self.chroma_ref[:, self.live_ptr + self.dtw_win_size]
-                chroma_y = self.chroma_ref[:, self.ref_ptr + self.dtw_win_size]
+            while (self.chroma_ptr - self.live_ptr >= (self.dtw_win_size/self.hop_size)):
+                chroma_x = self.chroma_live[:, self.live_ptr : self.live_ptr + (self.dtw_win_size/self.hop_size)]
+                chroma_y = self.chroma_ref[:, self.ref_ptr : self.ref_ptr + (self.dtw_win_size/self.hop_size)]
                 cost_xy = self.get_cost_matrix(chroma_x, chroma_y)
                 D, B = self.run_dtw(cost_xy)
-                #self.windows.append((D, self.live_ptr))
-                subpath = find_path(B)
-                next_start = self.live_ptr + self.dtw_hop_size
+                subpath = self.find_path(B)
+                next_start = self.dtw_hop_size / self.hop_size
+                change = False
+                index = None
                 for i in range(len(subpath)):
                     l = subpath[i][0]
                     r = subpath[i][1]
                     # TODO: <= vs just <
                     if l <= next_start:
-                        self.path.append((l, r))
+                        self.path.append((l + self.live_ptr, r + self.ref_ptr))
                     elif l > next_start:
-                        self.live_ptr = subpath[i-1][0]
-                        self.ref_ptr = subpath[i-1][1]
+                        change = True
+                        index = i - 1
                         break
+                if change:
+                    self.live_ptr = subpath[index][0] + self.live_ptr
+                    self.ref_ptr = subpath[index][1] + self.ref_ptr
                 
-
-    def debug_on(self):
-        self.debug = True
-        
-    def debug_off(self):
-        self.debug = False
+                # if not good estimate, just take diagonal
+                # TODO: come up with better alternative?
+                else:
+                    self.live_ptr = self.live_ptr + (self.dtw_hop_size/self.hop_size)
+                    self.ref_ptr = self.ref_ptr + (self.dtw_hop_size/self.hop_size)
     
     ########################
     ##  Helper functions  ##
@@ -125,7 +124,7 @@ class WTW():
         stft = np.empty((num_bins, num_hops), dtype=complex)
 
         M = num_hops
-        if self.debug:
+        if self.chroma_info:
             print "Calculating dft for", M, "hops."
         
         for m in range(M):
@@ -214,3 +213,101 @@ class WTW():
         path.reverse()
             
         return path
+
+class test_single_recording_WTW():
+    
+    def __init__(self, ref_recording, live_recording, ref_ground_truth, live_ground_truth, params, debug_params):
+        # TODO: pass in 'dtw', which is some form of DTW_x...
+        
+        self.dtw = WTW(ref_recording, params, debug_params)  
+        self.live_recording, fs = librosa.load(live_recording)
+        assert(fs == 22050)
+
+        self.song_info = debug_params['song']
+        self.error_info = debug_params['error']
+        self.error_detail = debug_params['error_detail']
+        
+        self.ref_ground_truth_time = []
+        self.ref_ground_truth_beats = []
+        self.live_ground_truth_time = []
+        self.live_ground_truth_beats = []
+        
+        ref_song = ref_recording[:-4]
+        if self.song_info:
+            print "Reference song:", ref_song
+        ref_csv_file = ref_song + '.csv'
+        live_song = live_recording[:-4]
+        if self.song_info:
+            print "Live song:", live_song
+        live_csv_file = live_song + '.csv'
+     
+        with open(ref_csv_file) as ref_csv_data:
+            reader = csv.reader(ref_csv_data)
+            for row in reader:
+                self.ref_ground_truth_time.append(float(row[0]))
+                self.ref_ground_truth_beats.append(int(row[1]))
+                
+        with open(live_csv_file) as live_csv_data:
+            reader = csv.reader(live_csv_data)
+            for row in reader:
+                self.live_ground_truth_time.append(float(row[0]))
+                self.live_ground_truth_beats.append(int(row[1]))
+        
+    def evaluate(self, buf_size):
+        '''Evaluate single piece of music with WTW.'''
+        # Emulate live recording via creation of buffers
+        buffers = np.array_split(self.live_recording, buf_size)
+        # For each buffer, get the synchronization estimate (ie the estimated position)
+        # via call to insert
+        for buf in buffers:
+            est = self.dtw.insert(buf.tolist())
+            if est == "stop":
+                break
+        
+        self.sync_ests = self.dtw.path
+        
+        # Compare estimates to ground truth, and return error
+        self.error = self.get_error()
+    
+    def get_error(self):
+        error = 0
+        num_off1 = 0
+        num_off3 = 0
+        if self.error_detail:
+            ff = float(self.dtw.fs) / self.dtw.hop_size
+            gsamples = [x * ff for x in self.ref_ground_truth_time]
+            print "samples at", gsamples
+        for (l, r) in self.sync_ests:
+            l_beat = self.get_beat(l, self.live_ground_truth_time, self.live_ground_truth_beats)
+            r_beat = self.get_beat(r, self.ref_ground_truth_time, self.ref_ground_truth_beats)
+            if self.error_detail:
+                print "(l, r): ", l, r
+                print "est: ", l * (self.dtw.hop_size / 22050.) , r * (self.dtw.hop_size / 22050.)
+                print "beats:", l_beat, r_beat
+            diff = (r_beat - l_beat)**2
+            if abs(r_beat - l_beat) > 1:
+                num_off1 += 1
+            if abs(r_beat - l_beat) > 3:
+                num_off3 += 1
+            error += diff
+        if self.error_info:
+            print "Percent incorrect (within 1 beat):", (float(num_off1) / len(self.sync_ests)) * 100, "%"
+        if self.error_detail:
+            print "Percent incorrect (within 3 beats):", (float(num_off3) / len(self.sync_ests)) * 100, "%"
+            print "Error:", error
+        return error
+    
+    def get_beat(self, t, gtime, gbeats):
+        ff = float(self.dtw.fs) / self.dtw.hop_size
+        gsam = [x * ff for x in gtime]
+        for i in range(len(gsam) - 1):
+            if t < gsam[i]:
+                return 0
+            if gsam[i] <= t < gsam[i+1]:
+                beatBefore = gbeats[i]
+                timeBefore = gtime[i]
+                timeAfter = gtime[i + 1]
+                time = t / ff
+                p_beat = (time - timeBefore) / (timeAfter - timeBefore)
+                return beatBefore + p_beat
+        return gbeats[-1]
