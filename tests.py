@@ -2,6 +2,10 @@ import numpy as np
 import math
 import os
 
+# matplotlib for displaying the output
+import matplotlib.pyplot as plt
+plt.rcParams['figure.figsize'] = (10, 6)
+
 # and IPython.display for audio output
 import IPython.display as ipd
 
