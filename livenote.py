@@ -1,3 +1,17 @@
+import numpy as np
+import math
+
+# and IPython.display for audio output
+import IPython.display as ipd
+
+# Librosa for audio
+import librosa
+# And the display module for visualization
+import librosa.display
+
+import pyaudio
+import csv
+
 class LiveNote():
     
     def __init__(self, ref_recording, params, debug_params):

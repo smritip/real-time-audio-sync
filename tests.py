@@ -1,3 +1,21 @@
+import numpy as np
+import math
+import os
+
+# and IPython.display for audio output
+import IPython.display as ipd
+
+# Librosa for audio
+import librosa
+# And the display module for visualization
+import librosa.display
+
+import pyaudio
+import csv
+
+from livenote import LiveNote
+from wtw import WTW
+
 class test_single_recording():
     
     def __init__(self, dtw, ref_recording, live_recording, ref_ground_truth, live_ground_truth, params, debug_params):
@@ -100,7 +118,7 @@ class test_single_recording():
         if self.error_detail:
             print "Percent incorrect (within 3 beats):", (float(num_off3) / len(self.sync_ests)) * 100, "%"
             print "Error:", error
-        # TODO: fix re-def of error...
+        # TODO: fix re-def of error... right now it is percent incorrect within 1 beat
         error = (float(num_off1) / len(self.sync_ests)) * 100
         return error
     
@@ -122,7 +140,7 @@ class test_single_recording():
 
 class test_DTW():  # multiple songs, 1 DTW_x algorithm
     
-    def __init__(self, recordings_dir, params, debug_params, dtw):
+    def __init__(self, dtw, recordings_dir, params, debug_params):
         self.recordings_dir = recordings_dir
         self.params = params
         self.debug_params = debug_params
@@ -133,23 +151,34 @@ class test_DTW():  # multiple songs, 1 DTW_x algorithm
         errors = []
         # TODO: change following pseudocode to real code
         # each folder has multiple recordings of one song
-        for folder in self.recordings_dir:
-            for ref in folder:
-                gt_ref = ref.csv
-                for live in folder:
-                    gt_live = live.csv
-                    test = test_single_recording(self.dtw, ref, live, gt_ref, gt_live, self.params, self.debug_params)
-                    error = test.evaluate(buf_size)
-                    errors.append(error)
-                
+        for subdir, dirs, files in os.walk(self.recordings_dir):
+            for d in dirs:
+                recs = []
+                for subdir2, dirs2, files2 in os.walk('Songs/'+d):
+                    for f in files2:
+                        if f.startswith(d) and f[:-4] not in recs and not (f[:-4].endswith('_20b')):
+                            recs.append(f[:-4])
+                for ref in recs:
+                    gt_ref = self.recordings_dir + d + '/' + ref + '.csv'
+                    for live in recs:
+                        gt_live = self.recordings_dir + d + '/' + live + '.csv'
+                        wav_ref = self.recordings_dir + d + '/' + ref + '.wav'
+                        wav_live = self.recordings_dir + d + '/' + live + '.wav'
+                        test = test_single_recording(self.dtw, wav_ref, wav_live, gt_ref, gt_live, self.params, self.debug_params)
+                        error = test.evaluate(buf_size)
+                        errors.append(error)
+                        if self.debug_params['error']:
+                            print "\n"
+
+            break  # break because only want dirs of root folder (the "Songs" folder)
+            
         errors = np.array(errors)
-        
         return np.mean(errors)
 
 
 class test_all():  # multiple songs, multiple DTWs (test each DTW with multiple recordings)
     
-    def __init__(self, recordings_dir, params, debug_params, dtws):
+    def __init__(self, dtws, recordings_dir, params, debug_params):
         self.recordings_dir = recordings_dir
         self.params = params
         self.debug_params = debug_params
@@ -157,10 +186,10 @@ class test_all():  # multiple songs, multiple DTWs (test each DTW with multiple 
         
     def evaluate(self):
         '''Evaluate all DTW variants (with all pieces).'''
-        errors = []
+        errors = {}
         for dtw in self.dtws:
-            test = test_DTW(self.recordings_dir, self.params, self.debug_params, dtw)
+            test = test_DTW(dtw, self.recordings_dir, self.params, self.debug_params)
             error = test.evaluate()
-            errors.append((dtw, score))
+            errors[dtw] = error
             
         return errors
