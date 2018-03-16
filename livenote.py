@@ -68,10 +68,11 @@ class LiveNote():
         self.live_ptr = 0
         self.previous = None
         self.run_count = 0
+        self.continueFlag = False
         
         if self.chroma_info:
             self.chroma_ptr = 0
-        
+
     def insert(self, live_audio_buf):
         # store incoming music
         self.buf += live_audio_buf
@@ -86,8 +87,8 @@ class LiveNote():
             section = np.array(self.buf[:self.fft_len])
             self.buf = self.buf[self.hop_size:]
             win = section * np.hanning(len(section))
-#            chroma = librosa.feature.chroma_stft(y=win, sr=self.fs, n_fft=self.fft_len, hop_length=self.hop_size)
-
+            #            chroma = librosa.feature.chroma_stft(y=win, sr=self.fs, n_fft=self.fft_len, hop_length=self.hop_size)
+            
             dft = np.fft.rfft(win)
             spec = np.abs(dft)**2
             raw_chroma = np.dot(self.chromafb, spec)
@@ -96,35 +97,39 @@ class LiveNote():
             if self.chroma_info:
                 self.chroma_live[:, self.chroma_ptr] = chroma
                 self.chroma_ptr += 1
-
+    
             # update cost matrix
             self.update_cost_matrix(chroma)
             if self.debug:
                 print "cost matrix ptr", self.cost_matrix_ptr
             
-            
-            # update distance (ie total path cost) matrix
-            while (self.ref_ptr < self.cost_matrix_ptr - 1) and (self.live_ptr < self.N - 1):
+            # main loop of algorithm -- expand distance matrix and search as needed
+            while self.ref_ptr < self.M and self.live_ptr < self.N:
                 inc = self.get_inc()
+                
                 if self.debug:
                     print "inc:", inc
                     print "ref ptr:", self.ref_ptr
                     print "live ptr:", self.live_ptr
                 
                 if inc != "column":
-                    self.live_ptr += 1
+                    if not self.continueFlag:
+                        self.live_ptr += 1
+                        self.continueFlag = True
+                        break
                     for k in range(self.ref_ptr - self.search_band_width + 1, self.ref_ptr + 1):
-                        if k > 0:
-                            #if self.debug:
-                            #   print "live, k:", self.live_ptr, k
+                        if k > 0 and self.live_ptr < self.N:
+                            if self.debug:
+                               print "live, k:", self.live_ptr, k
                             self.update_distance_matrix(self.live_ptr, k)
+                    self.continueFlag = False
 
                 if inc != "row":
                     self.ref_ptr += 1
                     for k in range(self.live_ptr - self.search_band_width + 1, self.live_ptr + 1):
-                        if k > 0:
-                            #if self.debug:
-                            #   print "k, ref:", k, self.ref_ptr
+                        if k > 0 and self.ref_ptr < self.M:
+                            if self.debug:
+                               print "k, ref:", k, self.ref_ptr
                             self.update_distance_matrix(k, self.ref_ptr)
 
                 if inc == self.previous:
@@ -135,23 +140,23 @@ class LiveNote():
                     self.run_count = 1
                     if self.debug:
                         print "run count is now", self.run_count
-                
+
                 if inc != "both":
                     self.previous = inc
 
                 # update path
-                self.path.append((self.ref_ptr, self.live_ptr))
-    
+                #self.path.append((self.ref_ptr, self.live_ptr))
+                #self.path.append((self.ref_ptr, self.live_ptr))
+                
     ########################
     ##  Helper functions  ##
     ########################
-    
+                
     def update_cost_matrix(self, chroma):
-        ''' 
+        '''
         Assumes chroma is just one column.
         Adds new row to matrix.
         '''
-        
         cost = np.empty((1, self.M))
         for i in range(self.M):
             cost[0, i] = 1 - np.true_divide(np.dot(self.chroma_ref[:, i], chroma), (np.linalg.norm(self.chroma_ref[:, i]) * np.linalg.norm(chroma)))
@@ -161,60 +166,72 @@ class LiveNote():
         # if first time adding to cost matrix, also initialize distance matrix
         if self.cost_matrix_ptr == 0:
             self.D[0, 0] = self.C[0, 0]
-
-        self.cost_matrix_ptr += 1
         
+        self.cost_matrix_ptr += 1
+    
     def get_inc(self):
-        if self.live_ptr < self.search_band_width:
+        if self.live_ptr <= self.search_band_width:
             if self.debug:
                 print "both because live ptr less than search band"
             return "both"
-
+        
         if self.run_count > self.max_run_count:
             if self.previous == "row":
                 return "column"
             else:
                 return "row"
 
-# from paper pseudocode:
+        # from paper pseudocode:
 # (y,x) := argmin(pathCost(k,l)), where (k == t) or (l == j)
+
+        if self.debug:
+            print self.D
+            print "for x1", self.D[self.live_ptr, self.ref_ptr - self.search_band_width : self.ref_ptr + 1]
+            print "for y2", self.D[self.live_ptr - self.search_band_width : self.live_ptr + 1, self.ref_ptr]
+        
+        
         y1 = self.live_ptr  ## k == t (from paper pseudocode)
+        #x1 = self.ref_ptr
         x1 = self.ref_ptr - self.search_band_width + np.argmin(self.D[y1, self.ref_ptr - self.search_band_width : self.ref_ptr + 1])
         x2 = self.ref_ptr
+        #y2 = self.live_ptr
         y2 = self.live_ptr - self.search_band_width + np.argmin(self.D[self.live_ptr - self.search_band_width : self.live_ptr + 1, x2])
         (x, y) = (x1, y1) if (self.D[y1, x1] < self.D[y2, x2]) else (x2, y2)
 
-
-#        y1 = self.live_ptr  ## k == t
-#        x1 = np.argmin(self.D[y1, self.ref_ptr - self.search_band_width : self.ref_ptr + 1])
-#        x2 = self.ref_ptr  ## l == j
-#        y2 = np.argmin(self.D[self.live_ptr - self.search_band_width : self.live_ptr + 1, x2])
-#        (y, x) = (y1, x1) if (self.D[y1, x1] < self.D[y2, x2]) else (y2, x2)
-
-# Nathan's:
-#        x_value = np.amin(self.D[self.live_ptr, self.ref_ptr - self.search_band_width : self.ref_ptr + 1])
-#        y_value = np.amin(self.D[self.live_ptr - self.search_band_width : self.live_ptr + 1, self.ref_ptr])
-#
-#        if x_value < y_value:
-#            x = self.ref_ptr - self.search_band_width + np.argmin(self.D[self.live_ptr, self.ref_ptr - self.search_band_width : self.ref_ptr + 1])
-#            y = self.live_ptr
-#        else:
-#            x = self.ref_ptr
-#            y = self.live_ptr - self.search_band_width + np.argmin(self.D[self.live_ptr - self.search_band_width : self.live_ptr + 1, self.ref_ptr])
-
+        # update path
+        self.path.append((x, y))
+        
+        
+        #        y1 = self.live_ptr  ## k == t
+        #        x1 = np.argmin(self.D[y1, self.ref_ptr - self.search_band_width : self.ref_ptr + 1])
+        #        x2 = self.ref_ptr  ## l == j
+        #        y2 = np.argmin(self.D[self.live_ptr - self.search_band_width : self.live_ptr + 1, x2])
+        #        (y, x) = (y1, x1) if (self.D[y1, x1] < self.D[y2, x2]) else (y2, x2)
+        
+        # Nathan's:
+        #        x_value = np.amin(self.D[self.live_ptr, self.ref_ptr - self.search_band_width : self.ref_ptr + 1])
+        #        y_value = np.amin(self.D[self.live_ptr - self.search_band_width : self.live_ptr + 1, self.ref_ptr])
+        #
+        #        if x_value < y_value:
+        #            x = self.ref_ptr - self.search_band_width + np.argmin(self.D[self.live_ptr, self.ref_ptr - self.search_band_width : self.ref_ptr + 1])
+        #            y = self.live_ptr
+        #        else:
+        #            x = self.ref_ptr
+        #            y = self.live_ptr - self.search_band_width + np.argmin(self.D[self.live_ptr - self.search_band_width : self.live_ptr + 1, self.ref_ptr])
+        
         if self.debug:
             print "x, y calculated:", x, y
             print "with ref ptr and live ptr:", self.ref_ptr, self.live_ptr
         if x < self.ref_ptr:
-        #if y < self.live_ptr:
+            #if y < self.live_ptr:
             return "row"
         elif y < self.live_ptr:
-        #elif x < self.ref_ptr:
+            #elif x < self.ref_ptr:
             return "column"
         if self.debug:
             print "both because last option"
         return "both"
-
+    
     def update_distance_matrix(self, i, j):
         #if self.debug:
         #   print "updating distance with i, j:", i, j
@@ -230,23 +247,23 @@ class LiveNote():
         if costs != []:
             cost = min(costs)
             self.D[i, j] = cost + self.C[i, j]
-        
+
         # else, self.D[i, j] will remain 'inf'
-        
+
     def stft(self, x, fft_len, hop_size):
         L = fft_len
         H = hop_size
-
+        
         # use centered window by zero-padding
         x = np.concatenate((np.zeros(L/2), x))
-
+        
         N = len(x)
-
+        
         num_bins = 1 + L/2
         num_hops = int(((N - L)/H) + 1)
-
+        
         stft = np.empty((num_bins, num_hops), dtype=complex)
-
+        
         M = num_hops
         if self.chroma_info:
             print "Calculating dft for", M, "hops."
@@ -255,8 +272,9 @@ class LiveNote():
             section = x[(m*H):((m*H) + L)]
             win = section * np.hanning(len(section))
             stft[:, m]= np.fft.rfft(win)
-
+        
         return stft
+
 
 class test_single_recording_livenote():
     
