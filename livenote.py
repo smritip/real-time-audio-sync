@@ -35,7 +35,7 @@ class LiveNote():
         # create STFT, spectrogram, and chromagram of reference audio
         # TODO: check additions (tuning, normalization, etc.)
         # note: using own stft function (vs. librosa's) b/c insert will also use self.stft
-        stft_ref = self.stft(self.ref, self.fft_len, self.hop_size)
+        stft_ref = self.stft(self.ref)
         spec_ref = np.abs(stft_ref)**2
         self.chromafb = librosa.filters.chroma(self.fs, self.fft_len)
         raw_chroma_ref = np.dot(self.chromafb, spec_ref)
@@ -152,6 +152,29 @@ class LiveNote():
     ##  Helper functions  ##
     ########################
                 
+    def stft(self, x):
+        L = self.fft_len
+        H = self.hop_size
+        
+        # use centered window by zero-padding
+        x = np.concatenate((np.zeros(L/2), x))
+        
+        N = len(x)
+        
+        num_bins = 1 + L/2
+        num_hops = int(((N - L)/H) + 1)
+        
+        stft = np.empty((num_bins, num_hops), dtype=complex)
+        
+        M = num_hops
+
+        for m in range(M):
+            section = x[(m*H):((m*H) + L)]
+            win = section * np.hanning(len(section))
+            stft[:, m]= np.fft.rfft(win)
+        
+        return stft
+
     def update_cost_matrix(self, chroma):
         '''
         Assumes chroma is just one column.
@@ -249,31 +272,6 @@ class LiveNote():
             self.D[i, j] = cost + self.C[i, j]
 
         # else, self.D[i, j] will remain 'inf'
-
-    def stft(self, x, fft_len, hop_size):
-        L = fft_len
-        H = hop_size
-        
-        # use centered window by zero-padding
-        x = np.concatenate((np.zeros(L/2), x))
-        
-        N = len(x)
-        
-        num_bins = 1 + L/2
-        num_hops = int(((N - L)/H) + 1)
-        
-        stft = np.empty((num_bins, num_hops), dtype=complex)
-        
-        M = num_hops
-        if self.chroma_info:
-            print "Calculating dft for", M, "hops."
-        
-        for m in range(M):
-            section = x[(m*H):((m*H) + L)]
-            win = section * np.hanning(len(section))
-            stft[:, m]= np.fft.rfft(win)
-        
-        return stft
 
 
 class test_single_recording_livenote():

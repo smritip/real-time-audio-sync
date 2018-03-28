@@ -20,6 +20,88 @@ import csv
 from livenote import LiveNote
 from wtw import WTW
 
+class test_simple():
+
+    def __init__(self, ref, live, path):
+
+        self.ref_gt_times = []
+        self.ref_gt_beats = []
+        self.live_gt_times = []
+        self.live_gt_beats = []
+
+        self.path = path
+        
+        ref_song = ref[:-4]
+        print "Reference song:", ref_song
+        ref_csv = ref_song + '.csv'
+        live_song = live[:-4]
+        print "Live song:", live_song
+        live_csv = live_song + '.csv'
+     
+        with open(ref_csv) as ref_csv_data:
+            reader = csv.reader(ref_csv_data)
+            for row in reader:
+                self.ref_gt_times.append(float(row[0]))
+                self.ref_gt_beats.append(int(row[1]))
+                
+        with open(live_csv) as live_csv_data:
+            reader = csv.reader(live_csv_data)
+            for row in reader:
+                self.live_gt_times.append(float(row[0]))
+                self.live_gt_beats.append(int(row[1]))
+
+    def get_error(self):
+        error = 0
+        num_off1 = 0
+        num_off3 = 0
+        num_off5 = 0
+        num_off10 = 0
+        count = 0
+        for (l, r) in self.path:
+            l_beat = self.get_beat(l, self.live_gt_times, self.live_gt_beats)
+            r_beat = self.get_beat(r, self.ref_gt_times, self.ref_gt_beats)
+            if l_beat and r_beat:
+                diff = abs(l_beat - r_beat)
+                error += diff ** 2
+
+                if diff > 1:
+                    num_off1 += 1
+                if diff > 3:
+                    num_off3 += 1
+                if diff > 5:
+                    num_off5 += 1
+                if diff > 10:
+                    num_off10 += 1
+
+                count += 1
+
+                print l_beat, r_beat, diff
+
+        print "Percent incorrect (within 1 beat):", (float(num_off1) / count) * 100, "%"
+        print "Percent incorrect (within 3 beat):", (float(num_off3) / count) * 100, "%"
+        print "Percent incorrect (within 5 beat):", (float(num_off5) / count) * 100, "%"
+        print "Percent incorrect (within 10 beat):", (float(num_off10) / count) * 100, "%"
+        return error
+                
+
+    def get_beat(self, sample, gt_times, gt_beats):
+        # convert sample to time
+        time = sample * (2048 / 22050.)
+        for i in range(len(gt_times)):
+            if i == 0:
+                if time <= gt_times[i]:
+                    if gt_times[i] != 0:
+                        frac = float(gt_times[i] - time) / (gt_times[i] - 0)
+                    else:
+                        frac = 0
+                    return gt_beats[i] - frac
+            else:
+                if gt_times[i-1] <= time <= gt_times[i]:
+                    frac = float(gt_times[i] - time) / (gt_times[i] - gt_times[i-1])
+                    return gt_beats[i] - frac
+
+        return None
+
 class test_single_recording():
     
     def __init__(self, dtw, ref_recording, live_recording, ref_ground_truth, live_ground_truth, params, debug_params):
@@ -100,27 +182,35 @@ class test_single_recording():
         error = 0
         num_off1 = 0
         num_off3 = 0
-        if self.error_detail:
-            ff = float(self.dtw.fs) / self.dtw.hop_size
-            gsamples = [x * ff for x in self.ref_ground_truth_time]
-            print "samples at", gsamples
+        num_off5 = 0
+        num_off10 = 0
+#        if self.error_detail:
+#            ff = float(self.dtw.fs) / self.dtw.hop_size
+#            gsamples = [x * ff for x in self.ref_ground_truth_time]
+#            print "samples at", gsamples
         for (l, r) in self.sync_ests:
             l_beat = self.get_beat(l, self.live_ground_truth_time, self.live_ground_truth_beats)
             r_beat = self.get_beat(r, self.ref_ground_truth_time, self.ref_ground_truth_beats)
-            if self.error_detail:
-                print "(l, r): ", l, r
-                print "est: ", l * (self.dtw.hop_size / 22050.) , r * (self.dtw.hop_size / 22050.)
-                print "beats:", l_beat, r_beat
+#            if self.error_detail:
+#                print "(l, r): ", l, r
+#                print "est: ", l * (self.dtw.hop_size / 22050.) , r * (self.dtw.hop_size / 22050.)
+#                print "beats:", l_beat, r_beat
             diff = (r_beat - l_beat)**2
             if abs(r_beat - l_beat) > 1:
                 num_off1 += 1
             if abs(r_beat - l_beat) > 3:
                 num_off3 += 1
+            if abs(r_beat - l_beat) > 5:
+                num_off5 += 1
+            if abs(r_beat - l_beat) > 10:
+                num_off10 += 1
             error += diff
         if self.error_info:
             print "Percent incorrect (within 1 beat):", (float(num_off1) / len(self.sync_ests)) * 100, "%"
         if self.error_detail:
             print "Percent incorrect (within 3 beats):", (float(num_off3) / len(self.sync_ests)) * 100, "%"
+            print "Percent incorrect (within 5 beats):", (float(num_off5) / len(self.sync_ests)) * 100, "%"
+            print "Percent incorrect (within 10 beats):", (float(num_off10) / len(self.sync_ests)) * 100, "%"
             print "Error:", error
         # TODO: fix re-def of error... right now it is percent incorrect within 1 beat
         error = (float(num_off1) / len(self.sync_ests)) * 100

@@ -53,6 +53,9 @@ class WTW():
         self.M = self.chroma_ref.shape[1]      # cols are ref
         
         self.chroma_live = np.zeros((12, self.N))
+
+        self.acc_cost = np.empty((self.N, self.M))
+        self.acc_cost.fill(float('inf'))
         
         # TODO: use pyaudio buffer
         self.buf = []
@@ -99,6 +102,7 @@ class WTW():
                 chroma_y = self.chroma_ref[:, self.ref_ptr : self.ref_ptr + (self.dtw_win_size/self.hop_size)]
                 cost_xy = self.get_cost_matrix(chroma_x, chroma_y)
                 D, B = self.run_dtw(cost_xy)
+                self.acc_cost[self.live_ptr : self.live_ptr + (self.dtw_win_size/self.hop_size), self.ref_ptr : self.ref_ptr + (self.dtw_win_size/self.hop_size)] = D
                 subpath = self.find_path(B)
                 next_start = self.dtw_hop_size / self.hop_size
                 change = False
@@ -122,6 +126,9 @@ class WTW():
                 else:
                     self.live_ptr = self.live_ptr + (self.dtw_hop_size/self.hop_size)
                     self.ref_ptr = self.ref_ptr + (self.dtw_hop_size/self.hop_size)
+
+            # TODO: figure out how to continue on last hop
+
     
     ########################
     ##  Helper functions  ##
@@ -291,27 +298,31 @@ class test_single_recording_WTW():
         error = 0
         num_off1 = 0
         num_off3 = 0
-        if self.error_detail:
-            ff = float(self.dtw.fs) / self.dtw.hop_size
-            gsamples = [x * ff for x in self.ref_ground_truth_time]
-            print "samples at", gsamples
+        num_off10 = 0
+#        if self.error_detail:
+#            ff = float(self.dtw.fs) / self.dtw.hop_size
+#            gsamples = [x * ff for x in self.ref_ground_truth_time]
+#            print "samples at", gsamples
         for (l, r) in self.sync_ests:
             l_beat = self.get_beat(l, self.live_ground_truth_time, self.live_ground_truth_beats)
             r_beat = self.get_beat(r, self.ref_ground_truth_time, self.ref_ground_truth_beats)
-            if self.error_detail:
-                print "(l, r): ", l, r
-                print "est: ", l * (self.dtw.hop_size / 22050.) , r * (self.dtw.hop_size / 22050.)
-                print "beats:", l_beat, r_beat
+#            if self.error_detail:
+#                print "(l, r): ", l, r
+#                print "est: ", l * (self.dtw.hop_size / 22050.) , r * (self.dtw.hop_size / 22050.)
+#                print "beats:", l_beat, r_beat
             diff = (r_beat - l_beat)**2
             if abs(r_beat - l_beat) > 1:
                 num_off1 += 1
             if abs(r_beat - l_beat) > 3:
                 num_off3 += 1
+            if abs(r_beat - l_beat) > 10:
+                num_off10 += 1
             error += diff
         if self.error_info:
             print "Percent incorrect (within 1 beat):", (float(num_off1) / len(self.sync_ests)) * 100, "%"
         if self.error_detail:
             print "Percent incorrect (within 3 beats):", (float(num_off3) / len(self.sync_ests)) * 100, "%"
+            print "Percent incorrect (within 10 beats):", (float(num_off10) / len(self.sync_ests)) * 100, "%"
             print "Error:", error
         return error
     
