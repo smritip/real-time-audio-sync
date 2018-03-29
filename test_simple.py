@@ -1,11 +1,12 @@
 import numpy as np
+import librosa
 import csv
 
 from livenote import LiveNote
 from otw_eran import OnlineTimeWarping
 from wtw import WTW
 from dtw import DTW
-from chroma import *
+from chroma import wav_to_chroma
 
 class test_simple():
 
