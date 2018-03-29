@@ -1,20 +1,4 @@
 import numpy as np
-import math
-import os
-
-# matplotlib for displaying the output
-import matplotlib.pyplot as plt
-plt.rcParams['figure.figsize'] = (10, 6)
-
-# and IPython.display for audio output
-import IPython.display as ipd
-
-# Librosa for audio
-import librosa
-# And the display module for visualization
-import librosa.display
-
-import pyaudio
 import csv
 
 from livenote import LiveNote
