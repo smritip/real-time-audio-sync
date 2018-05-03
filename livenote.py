@@ -54,6 +54,9 @@ class LiveNote():
         # add input
         self.seq_live[:, self.live_ptr] = live_sample
 
+        if self.live_ptr >= self.N:
+            print 'Done. Ran out of room in pre-allocated live-sequence'
+            return
         # eval paths
         k1 = max(0, self.ref_ptr - self.search_band_width + 1)
         k2 = self.ref_ptr + 1

@@ -1,0 +1,5 @@
+Songs/bso/bso_01.wav
+fft_len: 4096
+hop_size: 2048
+search_band_width: 50
+max_run_count: 3

@@ -239,6 +239,23 @@ class WTW():
             
         return path
 
+# wtw_params = {'fft_len': 4096, 'hop_size': 2048, 'dtw_win_size': 4096*10, 'dtw_hop_size': 2048*10}
+# wtw_debug_params = {'chroma': False, 'song': False, 'error': True, 'error_detail': False, 'alg': False}
+# ref = 'Songs/chopin/chopin_rubinstein.wav'
+# live = 'Songs/chopin/chopin_rachmaninoff.wav'
+
+# wtw = WTW(ref, wtw_params, wtw_debug_params)
+
+# live_recording, fs = librosa.load(live)
+# assert(fs == 22050)
+
+# buffers = np.array_split(live_recording, 4096)
+# for buf in buffers:
+#     cont = wtw.insert(buf.tolist())
+#     if cont == "stop":
+#         break
+# wtw_path = np.array(wtw.path)
+
 class test_single_recording_WTW():
     
     def __init__(self, ref_recording, live_recording, ref_ground_truth, live_ground_truth, params, debug_params):

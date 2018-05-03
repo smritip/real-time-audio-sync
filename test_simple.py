@@ -6,7 +6,7 @@ from livenote import LiveNote
 from otw_eran import OnlineTimeWarping
 from wtw import WTW
 from dtw import DTW
-from chroma import wav_to_chroma
+from chroma import wav_to_chroma, wav_to_chroma_col
 
 class test_simple():
 
@@ -91,16 +91,16 @@ class test_simple():
         return None
 
 
-ref = 'Songs/chopin/chopin_rubinstein.wav'
-live = 'Songs/chopin/chopin_rachmaninoff.wav'
-# ref = 'Songs/bach/bach_01.wav'
-# live = 'Songs/bach/bach_02.wav'
+#ref = 'Songs/chopin/chopin_rubinstein.wav'
+#live = 'Songs/chopin/chopin_rachmaninoff.wav'
+ref = 'Songs/bach/bach_01.wav'
+live = 'Songs/bach/bach_03.wav'
 ref_seq = wav_to_chroma(ref)
 live_seq = wav_to_chroma(live)
 
 # Smriti with set_live
 print "initializing livenote"
-params = {'search_band_width': 10, 'max_run_count': 3}
+params = {'search_band_width': 50, 'max_run_count': 3}
 debug_params = {'seq': False, 'all': False}
 ln = LiveNote(ref_seq, params, debug_params)
 
@@ -123,7 +123,7 @@ for i in range(live_seq.shape[1]):
     cont = ln2.insert(live_seq[:,i])
     if cont == "stop":
         break
-ln2_path = ln2.path
+ln2_path = np.array(ln2.path)
 
 print "testing livenote"
 ln2_test = test_simple(ref, live, ln2_path)
@@ -148,8 +148,7 @@ print '\n'
 
 # Eran with insert
 print "initializing OTW"
-otw2_params = {'c': 10, 'max_run_count': 3}
-otw2 = OnlineTimeWarping(ref_seq, otw2_params)
+otw2 = OnlineTimeWarping(ref_seq, otw_params)
 
 print "calling insert"
 for i in range(live_seq.shape[1]):
@@ -181,6 +180,9 @@ for buf in buffers:
     if cont == "stop":
         break
 wtw_path = np.array(wtw.path)
+f = open("wtw_test.txt", "w+")
+for i in range(len(wtw_path)):
+    f.write("%d %d\r\n" % (wtw_path[i][0], wtw_path[i][1]))
 
 print "testing WTW"
 wtw_test = test_simple(ref, live, wtw_path)

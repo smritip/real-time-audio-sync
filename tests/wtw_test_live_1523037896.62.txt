@@ -1,0 +1,5 @@
+Songs/chopin/chopin_rubinstein_20b.wav
+fft_len: 4096
+hop_size: 2048
+dtw_win_size: 40960
+dtw_hop_size: 20480
