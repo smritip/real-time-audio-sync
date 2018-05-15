@@ -7,7 +7,7 @@ from livenote import LiveNote
 from livenote_v2 import LiveNoteV2
 from wtw import WTW
 from dtw import DTW
-from chroma import wav_to_chroma, wav_to_chroma_col
+from chroma import wav_to_chroma, wav_to_chroma_col, wav_to_chroma_diff
 
 
 def lines_from_file(filename):
@@ -142,9 +142,13 @@ debug_params = {'seq': False, 'all': False}
 
 class test_livenote():
 
-    def __init__(self, ref, live, v2=False, path=None):
-        ref_seq = wav_to_chroma(ref)
-        live_seq = wav_to_chroma(live)
+    def __init__(self, ref, live, v2=False, diff=False, path=None):
+        if diff:
+            ref_seq = wav_to_chroma_diff(ref)
+            live_seq = wav_to_chroma_diff(live)
+        else:
+            ref_seq = wav_to_chroma(ref)
+            live_seq = wav_to_chroma(live)
 
         if path is None:
             # print "initializing livenote"
@@ -194,9 +198,10 @@ class test_wtw():
 
 class test_all():  # multiple songs
     
-    def __init__(self, recordings_dir, dtw_variant):
+    def __init__(self, recordings_dir, dtw_variant, livenote_diff=False):
         self.recordings_dir = recordings_dir
         self.dtw_variant = dtw_variant
+        self.livenote_diff = livenote_diff
         
     def evaluate(self):
         '''Evaluate a DTW variant (test with several pieces).'''
@@ -221,9 +226,15 @@ class test_all():  # multiple songs
                             wav_ref = self.recordings_dir + d + '/' + ref + '.wav'
                             wav_live = self.recordings_dir + d + '/' + live + '.wav'
                             if self.dtw_variant == LiveNote:
-                                test = test_livenote(wav_ref, wav_live)
+                                if self.livenote_diff:
+                                    test = test_livenote(wav_ref, wav_live, diff=True)
+                                else:
+                                    test = test_livenote(wav_ref, wav_live)
                             elif self.dtw_variant == LiveNoteV2:
-                                test = test_livenote(wav_ref, wav_live, v2=True)
+                                if self.livenote_diff:
+                                    test = test_livenote(wav_ref, wav_live, v2=True, diff=True)
+                                else:
+                                    test = test_livenote(wav_ref, wav_live, v2=True)
                             elif self.dtw_variant == WTW:
                                 test = test_wtw(wav_ref, wav_live)
                             elif self.dtw_variant == DTW:
@@ -250,12 +261,12 @@ class test_all():  # multiple songs
         print "\n"
         return np.mean(errors)
 
-print "\n"
-print "==================\n"
-print " Testing Livenote\n"
-print "==================\n\n"
-test_ln = test_all('Songs/', LiveNote)
-avg_error_ln = test_ln.evaluate()
+# print "\n"
+# print "==================\n"
+# print " Testing Livenote\n"
+# print "==================\n\n"
+# test_ln = test_all('Songs/', LiveNote)
+# avg_error_ln = test_ln.evaluate()
 
 print "\n"
 print "=====================\n"
@@ -265,8 +276,24 @@ test_ln_v2 = test_all('Songs/', LiveNoteV2)
 avg_error_ln_v2 = test_ln_v2.evaluate()
 
 print "\n"
-print "=============\n"
-print " Testing WTW\n"
-print "=============\n\n"
-test_w = test_all('Songs/', WTW)
-avg_error_wtw = test_w.evaluate()
+print "=======================\n"
+print " Testing Livenote Diff\n"
+print "=======================\n\n"
+test_ln_diff = test_all('Songs/', LiveNoteV2, livenote_diff=True)
+avg_error_ln_diff = test_ln_diff.evaluate()
+
+# print "\n"
+# print "=============\n"
+# print " Testing WTW\n"
+# print "=============\n\n"
+# test_w = test_all('Songs/', WTW)
+# avg_error_wtw = test_w.evaluate()
+
+
+# Not testing anymore:
+# print "\n"
+# print "============================\n"
+# print " Testing Livenote Diff w/OG\n"
+# print "============================\n\n"
+# test_ln_diff_og = test_all('Songs/', LiveNote, livenote_diff=True)
+# avg_error_ln_diff_og = test_ln_diff_og.evaluate()
