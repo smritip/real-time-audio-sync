@@ -64,13 +64,15 @@ def create_stft(wav):
     
     return stft
 
-def create_chroma(ft):
+def create_chroma(ft, normalize=True):
     spec = np.abs(ft)**2
     chromafb = librosa.filters.chroma(fs, fft_len)
     raw_chroma = np.dot(chromafb, spec)
-    chroma = librosa.util.normalize(raw_chroma, norm=2, axis=0)
-
-    return chroma
+    if not normalize:
+        return raw_chroma
+    else:
+        chroma = librosa.util.normalize(raw_chroma, norm=2, axis=0)
+        return chroma
 
 def wav_to_chroma_diff(path_to_wav):
     # generate wav
@@ -80,7 +82,7 @@ def wav_to_chroma_diff(path_to_wav):
     # create chroma (STFT --> spectrogram --> chromagram)
     stft = create_stft(wav)
 
-    chroma = create_chroma(stft)
+    chroma = create_chroma(stft, normalize=True)
     # print chroma[:20]
     # print np.diff(chroma)[:20]
 
