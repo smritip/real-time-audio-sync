@@ -153,7 +153,7 @@ class test_livenote():
         if path is None:
             # print "initializing livenote"
             if v2:
-                ln = LiveNoteV2(ref_seq, params, debug_params)
+                ln = LiveNoteV2(ref_seq, params, debug_params, chroma_diff=True)
             else:
                 ln = LiveNote(ref_seq, params, debug_params)
 
@@ -268,12 +268,12 @@ class test_all():  # multiple songs
 # test_ln = test_all('Songs/', LiveNote)
 # avg_error_ln = test_ln.evaluate()
 
-print "\n"
-print "=====================\n"
-print " Testing Livenote V2\n"
-print "=====================\n\n"
-test_ln_v2 = test_all('Songs/', LiveNoteV2)
-avg_error_ln_v2 = test_ln_v2.evaluate()
+# print "\n"
+# print "=====================\n"
+# print " Testing Livenote V2\n"
+# print "=====================\n\n"
+# test_ln_v2 = test_all('Songs/', LiveNoteV2)
+# avg_error_ln_v2 = test_ln_v2.evaluate()
 
 print "\n"
 print "=======================\n"

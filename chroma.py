@@ -84,4 +84,5 @@ def wav_to_chroma_diff(path_to_wav):
     # print chroma[:20]
     # print np.diff(chroma)[:20]
 
-    return np.diff(chroma)
+    chroma_diff = np.diff(chroma)
+    return np.clip(chroma_diff, 0, float('inf'))

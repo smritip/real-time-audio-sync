@@ -5,7 +5,7 @@ class LiveNoteV2():
     Same implementation of LiveNote but does not allow addition of points in the past to the path.
     '''
     
-    def __init__(self, ref, params, debug_params):
+    def __init__(self, ref, params, debug_params, chroma_diff=False):
         
         # algorithm params
         self.search_band_width = params['search_band_width']  # max lookback
@@ -35,6 +35,9 @@ class LiveNoteV2():
         self.run_count = 0
         self.first_insert = True
         self.direction = "both"
+        
+        # if feature is chroma diff
+        self.chroma_diff = chroma_diff
 
     # Insert one sample
     def insert(self, live_sample):
@@ -161,7 +164,10 @@ class LiveNoteV2():
     
     def eval_path_cost(self, i, j):
         # update cost matrix
-        self.cost[i, j] = 1 - np.dot(self.seq_live[:,i], self.seq_ref[:,j])
+        if self.chroma_diff:  # using chroma difference feature
+            self.cost[i, j] = np.sqrt(np.sum((self.seq_live[:, i] - self.seq_ref[:, j])**2))
+        else:  # using pure chroma feature
+            self.cost[i, j] = 1 - np.dot(self.seq_live[:,i], self.seq_ref[:,j])
 
         # update accumulated cost matrix
         # initial condition
